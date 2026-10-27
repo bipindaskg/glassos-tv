@@ -15,9 +15,13 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 
 /** Device admin with force-lock only: lets Glass put the TV to sleep (`DevicePolicyManager.lockNow`). */
@@ -137,6 +141,39 @@ object Net {
     } catch (e: Throwable) { false }
 
     fun vpnActive(ctx: Context) = anyTransport(ctx, NetworkCapabilities.TRANSPORT_VPN)
+
+    /** True while the TV is connected to a Wi-Fi network (with or without internet behind it). */
+    fun wifiConnected(ctx: Context) = anyTransport(ctx, NetworkCapabilities.TRANSPORT_WIFI)
+
+    /**
+     * Calls [onChange] on the main thread whenever Wi-Fi connects or drops (true while connected), and once for a
+     * network that is already up. Returns a function that stops watching.
+     *
+     * The networks are counted here rather than asking the system again in onLost, which may still list the network
+     * that was just lost. The application context is used because registering with an Activity context leaks it on
+     * Android 6 and earlier.
+     */
+    fun watchWifi(ctx: Context, onChange: (Boolean) -> Unit): () -> Unit {
+        val app = ctx.applicationContext
+        val main = Handler(Looper.getMainLooper())
+        val up = HashSet<Network>()
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { main.post { up.add(network); onChange(true) } }
+            override fun onLost(network: Network) { main.post { up.remove(network); onChange(up.isNotEmpty()) } }
+        }
+        try {
+            val req = NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
+            cm(app).registerNetworkCallback(req, cb)
+        } catch (e: Throwable) {
+            // A few boxes cap the number of callbacks (TooManyRequestsException) or lack the service: the icon keeps
+            // the state it started with.
+            return { }
+        }
+        return {
+            main.removeCallbacksAndMessages(null)
+            try { cm(app).unregisterNetworkCallback(cb) } catch (e: Throwable) { }
+        }
+    }
 
     /** The Wi-Fi network's name, "Ethernet", or "Not connected". */
     fun networkName(ctx: Context): String {

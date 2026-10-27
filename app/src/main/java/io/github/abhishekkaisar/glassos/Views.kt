@@ -350,7 +350,10 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
     }
 }
 
-/** tvOS 26 profile capsule: the time on the left, the round avatar at the right end. OK opens Control Center. */
+/**
+ * tvOS 26 profile capsule: a Wi-Fi status icon and the time on the left, the round avatar at the right end.
+ * OK opens Control Center.
+ */
 class UserPill(ctx: Context) : View(ctx) {
     var onClick: (() -> Unit)? = null
     var onLongPress: (() -> Unit)? = null
@@ -366,6 +369,9 @@ class UserPill(ctx: Context) : View(ctx) {
         }
     var time = ""
         set(v) { if (v != field) { field = v; requestLayout(); invalidate() } }
+    /** True while Wi-Fi is connected. The icon's slot is always reserved, so a change only redraws. */
+    var wifi = true
+        set(v) { if (v != field) { field = v; invalidate() } }
 
     private val glass = GlassPainter().apply {
         tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f)
@@ -377,6 +383,7 @@ class UserPill(ctx: Context) : View(ctx) {
     private val circle = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val m = Matrix()
+    private val wifiPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val timeText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Fonts.medium; textSize = ctx.dp(13f); color = Color.WHITE
     }
@@ -389,6 +396,9 @@ class UserPill(ctx: Context) : View(ctx) {
     private val inset = ctx.dp(2.5f)
     private val padL = ctx.dp(11f)
     private val gapT = ctx.dp(7f)
+    /** The Wi-Fi icon's box and the space between it and the time. */
+    private val wifiS = ctx.dp(15f)
+    private val gapW = ctx.dp(8f)
 
     init {
         isFocusable = true
@@ -398,7 +408,7 @@ class UserPill(ctx: Context) : View(ctx) {
     }
 
     override fun onMeasure(w: Int, hs: Int) {
-        val width = padL + timeText.measureText(time) + gapT + av + inset
+        val width = padL + wifiS + gapW + timeText.measureText(time) + gapT + av + inset
         setMeasuredDimension(Math.ceil(width.toDouble()).toInt(), h)
     }
 
@@ -460,7 +470,17 @@ class UserPill(ctx: Context) : View(ctx) {
             shadowStep = q
             if (q > 0) timeText.setShadowLayer(dp(3f), 0f, dp(0.5f), alphaOf(Color.BLACK, 0.35f * q / 8f)) else timeText.clearShadowLayer()
         }
-        c.drawText(time, padL, cy - (timeText.ascent() + timeText.descent()) / 2, timeText)
+        // Wi-Fi: the Control Center glyph, white when connected; dimmed and struck through when not.
+        val wx = padL + wifiS / 2
+        if (wifi) {
+            Glyphs.draw(c, Glyph.WIFI, wx, cy, wifiS, Color.WHITE, wifiPaint)
+        } else {
+            Glyphs.draw(c, Glyph.WIFI, wx, cy, wifiS, alphaOf(Color.WHITE, 0.45f), wifiPaint)
+            wifiPaint.color = alphaOf(Color.WHITE, 0.9f)
+            val d = wifiS * 0.42f
+            c.drawLine(wx - d, cy - d, wx + d, cy + d, wifiPaint)
+        }
+        c.drawText(time, padL + wifiS + gapW, cy - (timeText.ascent() + timeText.descent()) / 2, timeText)
 
         val cx = width - inset - av / 2
         val bmp = avatar

@@ -100,6 +100,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     var resumed = false
         set(v) { field = v; updateHeroRunning() }
     private var released = false
+    /** Stops the Wi-Fi watch that keeps the icon in the user pill current. */
+    private var stopWifiWatch: (() -> Unit)? = null
     private val refreshing = java.util.concurrent.atomic.AtomicBoolean(false)
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
@@ -126,6 +128,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         Backdrop.addListener(backdropListener)
         Backdrop.addFrameListener(frameListener)
         buildUi()
+        stopWifiWatch = Net.watchWifi(ctx) { up -> if (!released) gear.wifi = up }
         worker.execute { HomeShare.ensureSound(ctx) }
         val seedHero = seed?.hero
         if (seedHero != null && seedHero.slides.isNotEmpty()) hero.adopt(seedHero) else setWallpaper(prefs.scene, save = false)
@@ -137,6 +140,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun release() {
         if (released) return
         released = true
+        stopWifiWatch?.invoke()
+        stopWifiWatch = null
         Backdrop.removeListener(backdropListener)
         Backdrop.removeFrameListener(frameListener)
         hero.release()
@@ -207,6 +212,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             rightMargin = sw * 60 / 1920; topMargin = sh * 48 / 1080
         })
         hero.nextFocusUpId = gear.id
+        gear.wifi = Net.wifiConnected(ctx)
         updateTime()
         if (HomeShare.avatar == null) loadAvatar()
 
